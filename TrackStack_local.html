@@ -1,0 +1,3092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrackStack – Parallel To-Do Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            foreground: {
+              100: "#fffbf8", 150: "#f8f4f1", 200: "#efeae7", 250: "#e2ddd9",
+              300: "#cfc9c5", 350: "#b3ada8", 400: "#98918b", 450: "#746d68",
+              550: "#635c57", 600: "#5a544f", 650: "#4c4642", 700: "#3f3935",
+              750: "#322d29", 800: "#272320", 850: "#1d1a17", 900: "#14110e",
+            },
+            background: {
+              100: "#fffbf8", 150: "#f8f4f1", 200: "#efeae7", 250: "#e2ddd9",
+              300: "#cfc9c5", 350: "#b3ada8", 400: "#98918b", 450: "#746d68",
+            },
+            accent: {
+              100: "#f5f8fd", 150: "#eef4fe", 200: "#dbeafe", 250: "#c4dbfa",
+              300: "#93b5ef", 350: "#6e9be4", 400: "#5489d6", 450: "#3468b0",
+              550: "#2b5899", 600: "#244b83", 650: "#1e3f6e", 700: "#1a355e",
+              750: "#152b4e", 800: "#102140", 850: "#0c1832", 900: "#081025",
+            },
+            stroke: {
+              100: "#fffbf8", 150: "#fff3ea", 200: "#f6e8dd", 250: "#ebdbce",
+              300: "#dac6b7", 350: "#c1a996", 400: "#a88c76", 450: "#87674e",
+              550: "#745740", 600: "#6a4f39",
+            },
+            muted: {
+              100: "#fffbf8", 200: "#f6e8dd", 300: "#dac6b7", 400: "#a88c76", 450: "#87674e",
+            },
+            "system-green": { 200: "#baeec0", 350: "#6cc57b", 400: "#32ad52", 550: "#01712b" },
+            "system-red": { 200: "#ffe4e1", 350: "#f98981", 400: "#e7615b", 550: "#ac1922" },
+            "system-blue": { 200: "#dbeafe", 400: "#5489d6", 550: "#2f5ea3" },
+          },
+          borderRadius: {
+            "3xl": "1.25rem", "4xl": "1.5rem", "5xl": "1.75rem", "6xl": "2rem",
+          },
+          fontFamily: {
+            sans: ["Inter", "sans-serif"],
+          },
+        },
+      },
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    body { font-family: 'Inter', sans-serif; }
+
+    .task-list::-webkit-scrollbar { width: 4px; }
+    .task-list::-webkit-scrollbar-track { background: transparent; }
+    .task-list::-webkit-scrollbar-thumb { background: #dac6b7; border-radius: 4px; }
+    .task-list { scrollbar-width: thin; scrollbar-color: #dac6b7 transparent; }
+
+    .tracks-area::-webkit-scrollbar { height: 6px; }
+    .tracks-area::-webkit-scrollbar-track { background: transparent; }
+    .tracks-area::-webkit-scrollbar-thumb { background: #dac6b7; border-radius: 4px; }
+
+    .dark .task-list::-webkit-scrollbar-thumb { background: #4c4642; }
+    .dark .tracks-area::-webkit-scrollbar-thumb { background: #4c4642; }
+
+    /* ── Fixed-height task card ─────────────────────────────────────────── */
+    .task-card {
+      height: 36px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 6px;
+      border-radius: 8px;
+      margin-bottom: 3px;
+      transition: opacity 0.18s ease, transform 0.2s ease, background 0.15s ease;
+      position: relative;
+      flex-wrap: nowrap;
+      cursor: grab;
+    }
+    .task-card:active {
+      cursor: grabbing;
+    }
+    .task-card.removing { opacity: 0; transform: translateX(-8px); }
+    .task-card.adding { animation: fadeSlideIn 0.2s ease forwards; }
+
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .col-card { transition: box-shadow 0.2s ease; }
+
+    .track-title-input {
+      font-weight: 600;
+      font-size: 13px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid #93b5ef;
+      outline: none;
+      width: 100%;
+      padding: 0 0 2px 0;
+      color: inherit;
+    }
+
+    .task-textarea {
+      width: 100%;
+      resize: none;
+      background: transparent;
+      border: none;
+      outline: none;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      line-height: 1.4;
+      color: inherit;
+      padding: 0;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    /* ── Inline task title input ────────────────────────────────────────── */
+    .task-title-input {
+      flex: 1;
+      min-width: 0;
+      width: 100%;
+      font-size: 12px;
+      font-family: 'Inter', sans-serif;
+      background: transparent;
+      border: none;
+      border-bottom: 1.5px solid #5489d6;
+      outline: none;
+      padding: 0 0 1px 0;
+      color: inherit;
+      line-height: 1;
+    }
+    .dark .task-title-input {
+      border-bottom-color: #6e9be4;
+    }
+
+    .topbar-transition { transition: background-color 0.2s ease, border-color 0.2s ease; }
+    .col-transition { transition: background-color 0.2s ease; }
+    .body-transition { transition: background-color 0.2s ease; }
+
+    /* Loading overlay */
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f8f4f1;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      color: #98918b;
+      letter-spacing: 0.01em;
+      transition: opacity 0.3s ease;
+    }
+    .dark #loading-overlay { background: #1d1a17; color: #746d68; }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid #dbeafe;
+      border-top-color: #3468b0;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Confirmation button states */
+    .btn-confirm-active {
+      background: #fef2f2 !important;
+      color: #e7615b !important;
+      border: 1px solid #fca5a5 !important;
+    }
+    .dark .btn-confirm-active {
+      background: #3b1212 !important;
+      color: #f98981 !important;
+      border: 1px solid #7f1d1d !important;
+    }
+
+    /* Checkbox — 14px, vertically centered */
+    .checkbox-circle {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 1.5px solid #dac6b7;
+      flex-shrink: 0;
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .checkbox-circle:hover { border-color: #3468b0; }
+    .checkbox-circle.checked {
+      background: #3468b0;
+      border-color: #3468b0;
+    }
+    .checkbox-circle.checked svg { display: block !important; }
+
+    /* Delete column confirm state */
+    .del-col-btn { transition: color 0.15s ease; }
+
+    /* mobile touch scrolling */
+    .tracks-area { -webkit-overflow-scrolling: touch; }
+    .tracks-area { scrollbar-width: thin; scrollbar-color: #dac6b7 transparent; }
+
+    /* Empty state */
+    .empty-state { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    /* ── Drag and Drop (Tasks) ───────────────────────────────────────────── */
+    .task-card.dragging {
+      opacity: 0.3;
+      cursor: grabbing;
+    }
+    .task-card.drag-above {
+      border-top: 2px solid #5489d6;
+      margin-top: -2px;
+    }
+    .task-card.drag-below {
+      border-bottom: 2px solid #5489d6;
+      margin-bottom: -2px;
+    }
+    .dark .task-card.drag-above {
+      border-top-color: #6e9be4;
+    }
+    .dark .task-card.drag-below {
+      border-bottom-color: #6e9be4;
+    }
+
+    /* Task text truncation */
+    .task-text {
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: block;
+      line-height: 1;
+      cursor: text;
+    }
+    .task-text:hover {
+      text-decoration: underline;
+      text-decoration-style: dashed;
+      text-decoration-color: #b3ada8;
+      text-underline-offset: 2px;
+    }
+
+    /* Action buttons inside fixed card */
+    .task-actions {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+    .task-action-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: color 0.15s ease;
+      flex-shrink: 0;
+    }
+
+    /* ── Progress bar inside task card ─────────────────────────────────── */
+    .task-progress-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      border-radius: 0 0 8px 8px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .task-progress-bar-fill {
+      height: 100%;
+      transition: width 0.25s ease;
+      border-radius: 0 0 8px 8px;
+    }
+
+    /* ── Task text in-progress styling ──────────────────────────────────── */
+    .task-text-inprogress {
+      font-style: italic;
+      color: #6b8cba !important;
+    }
+    .dark .task-text-inprogress {
+      color: #7ea8d4 !important;
+    }
+
+    /* ── Cancelled task ──────────────────────────────────────────────── */
+    .task-text-cancelled {
+      color: #9ca3af !important;
+      text-decoration: line-through;
+      text-decoration-color: #9ca3af;
+    }
+    .dark .task-text-cancelled {
+      color: #6b7280 !important;
+    }
+    .task-cancelled-indicator {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #9ca3af;
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1;
+      margin-right: 1px;
+      user-select: none;
+    }
+    .dark .task-cancelled-indicator { color: #6b7280; }
+
+    /* ── Cancel toggle button (details modal) ───────────────────────── */
+    .cancel-toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 12px;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+      color: #6b7280;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.15s ease;
+      flex: 1;
+    }
+    .cancel-toggle-btn:hover {
+      border-color: #ef4444;
+      color: #b91c1c;
+      background: #fef2f2;
+    }
+    .cancel-toggle-btn.active {
+      background: #fef2f2;
+      border-color: #ef4444;
+      color: #b91c1c;
+    }
+    .dark .cancel-toggle-btn {
+      border-color: #4c4642;
+      color: #b3ada8;
+    }
+    .dark .cancel-toggle-btn:hover,
+    .dark .cancel-toggle-btn.active {
+      border-color: #ef4444;
+      color: #ef4444;
+      background: #2a1010;
+    }
+    .cancel-toggle-btn.disabled-state {
+      opacity: 0.38;
+      pointer-events: none;
+    }
+
+    .disabled-state { opacity: 0.38 !important; pointer-events: none !important; }
+
+    /* ── Details/ellipsis icon button ──────────────────────────────────── */
+    .details-icon-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border-radius: 4px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: opacity 0.15s ease;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1;
+      letter-spacing: -0.5px;
+      border: none;
+      background: transparent;
+    }
+    .details-icon-btn.has-notes { color: #f59e0b; }
+    .details-icon-btn.no-notes { color: #b3ada8; }
+    .details-icon-btn:hover { opacity: 0.75; }
+
+    /* ── Detail Modal ───────────────────────────────────────────────────── */
+    #task-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      animation: backdropIn 0.18s ease;
+    }
+    @keyframes backdropIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    #task-modal-backdrop.hidden { display: none; }
+
+    #task-modal-panel {
+      background: #fffbf8;
+      border-radius: 20px;
+      box-shadow: 0 24px 64px rgba(20,17,14,0.18);
+      width: 100%;
+      max-width: 440px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 0;
+      animation: modalIn 0.2s ease;
+      scrollbar-width: thin;
+      scrollbar-color: #dac6b7 transparent;
+    }
+    #task-modal-panel::-webkit-scrollbar { width: 4px; }
+    #task-modal-panel::-webkit-scrollbar-thumb { background: #dac6b7; border-radius: 4px; }
+
+    .dark #task-modal-panel {
+      background: #272320;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+    }
+    .dark #task-modal-panel::-webkit-scrollbar-thumb { background: #4c4642; }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: scale(0.96) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 20px 20px 12px 20px;
+      border-bottom: 1px solid #f6e8dd;
+    }
+    .dark .modal-header { border-bottom-color: #3f3935; }
+
+    .modal-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1d1a17;
+      line-height: 1.4;
+      flex: 1;
+      min-width: 0;
+      word-break: break-word;
+    }
+    .dark .modal-title { color: #f8f4f1; }
+
+    .modal-title-input {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1d1a17;
+      line-height: 1.4;
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: none;
+      border-bottom: 1.5px solid transparent;
+      outline: none;
+      padding: 0 0 3px 0;
+      font-family: 'Inter', sans-serif;
+      transition: border-color 0.15s ease;
+      word-break: break-word;
+    }
+    .modal-title-input:focus {
+      border-bottom-color: #5489d6;
+    }
+    .dark .modal-title-input {
+      color: #f8f4f1;
+    }
+    .dark .modal-title-input:focus {
+      border-bottom-color: #6e9be4;
+    }
+
+    .modal-close-x {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      cursor: pointer;
+      color: #98918b;
+      flex-shrink: 0;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .modal-close-x:hover {
+      background: #efeae7;
+      color: #3f3935;
+    }
+    .dark .modal-close-x:hover {
+      background: #3f3935;
+      color: #f8f4f1;
+    }
+
+    .modal-body {
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .modal-section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #98918b;
+      margin-bottom: 8px;
+    }
+    .dark .modal-section-label { color: #746d68; }
+
+    /* Percent pills */
+    .percent-pills {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .percent-pill {
+      flex: 1;
+      min-width: 48px;
+      padding: 5px 4px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      border: 1.5px solid #dac6b7;
+      background: transparent;
+      color: #5a544f;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .dark .percent-pill {
+      border-color: #4c4642;
+      color: #b3ada8;
+    }
+    .percent-pill:hover {
+      border-color: #3468b0;
+      color: #3468b0;
+    }
+    .dark .percent-pill:hover {
+      border-color: #6e9be4;
+      color: #6e9be4;
+    }
+    .percent-pill.active {
+      background: #3468b0;
+      border-color: #3468b0;
+      color: #fff;
+    }
+    .dark .percent-pill.active {
+      background: #3468b0;
+      border-color: #5489d6;
+      color: #fff;
+    }
+
+    /* Modal notes textarea */
+    .modal-notes-textarea {
+      width: 100%;
+      min-height: 96px;
+      border-radius: 10px;
+      border: 1.5px solid #dac6b7;
+      background: #f8f4f1;
+      color: #272320;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      line-height: 1.55;
+      padding: 10px 12px;
+      outline: none;
+      resize: vertical;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .modal-notes-textarea:focus {
+      border-color: #3468b0;
+      background: #fffbf8;
+    }
+    .dark .modal-notes-textarea {
+      background: #1d1a17;
+      border-color: #4c4642;
+      color: #f8f4f1;
+    }
+    .dark .modal-notes-textarea:focus {
+      border-color: #5489d6;
+      background: #14110e;
+    }
+    .modal-notes-textarea::placeholder {
+      color: #b3ada8;
+    }
+    .dark .modal-notes-textarea::placeholder {
+      color: #746d68;
+    }
+
+    /* Modal footer */
+    .modal-footer {
+      padding: 0 20px 20px 20px;
+    }
+    .modal-done-btn {
+      width: 100%;
+      padding: 9px 16px;
+      border-radius: 12px;
+      background: #3468b0;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: background 0.15s ease;
+    }
+    .modal-done-btn:hover { background: #2b5899; }
+
+    /* Modal progress preview */
+    .modal-progress-preview {
+      height: 6px;
+      border-radius: 99px;
+      background: #efeae7;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .dark .modal-progress-preview { background: #3a3733; }
+    .modal-progress-preview-fill {
+      height: 100%;
+      border-radius: 99px;
+      transition: width 0.3s ease, background 0.3s ease;
+    }
+
+    /* ── iOS Safe Area & Standalone Mode header padding ───────────────── */
+    #topbar {
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-right: calc(1.25rem + env(safe-area-inset-right, 0px));
+    }
+
+    /* iOS standalone (Add to Home Screen) mode — close button is ~44px wide at top-right */
+    @media (display-mode: standalone) {
+      #btn-dark-mode {
+        margin-right: 48px;
+      }
+    }
+
+    /* ── Column Drag and Drop ───────────────────────────────────────────── */
+    .column-dragging {
+      opacity: 0.5;
+    }
+    .column-drag-over-left {
+      border-left: 3px solid #3468b0;
+    }
+    .column-drag-over-right {
+      border-right: 3px solid #3468b0;
+    }
+    .dark .column-drag-over-left {
+      border-left-color: #6e9be4;
+    }
+    .dark .column-drag-over-right {
+      border-right-color: #6e9be4;
+    }
+
+    /* Vertical drag indicators */
+    .column-drag-over-top {
+      box-shadow: 0 -3px 0 0 #3468b0, 0 8px 24px rgba(20,17,14,0.06) !important;
+    }
+    .column-drag-over-bottom {
+      box-shadow: 0 3px 0 0 #3468b0, 0 8px 24px rgba(20,17,14,0.06) !important;
+    }
+    .dark .column-drag-over-top {
+      box-shadow: 0 -3px 0 0 #5b8dd9, 0 8px 24px rgba(0,0,0,0.25) !important;
+    }
+    .dark .column-drag-over-bottom {
+      box-shadow: 0 3px 0 0 #5b8dd9, 0 8px 24px rgba(0,0,0,0.25) !important;
+    }
+
+    /* Combine-into-stack indicator (center drop) */
+    .column-drag-combine {
+      outline: 2px solid #3468b0 !important;
+      outline-offset: -2px;
+    }
+    .dark .column-drag-combine {
+      outline-color: #5b8dd9 !important;
+    }
+
+    .column-drag-handle {
+      cursor: grab;
+      padding: 0 4px 0 0;
+      color: #9ca3af;
+      font-size: 12px;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      height: 100%;
+      transition: color 0.15s ease;
+    }
+    .column-drag-handle:hover {
+      color: #746d68;
+    }
+    .column-drag-handle:active {
+      cursor: grabbing;
+    }
+    .dark .column-drag-handle {
+      color: #635c57;
+    }
+    .dark .column-drag-handle:hover {
+      color: #98918b;
+    }
+
+    /* ── Export / Import buttons ────────────────────────────────────────── */
+    .io-btn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: #efeae7;
+      color: #5a544f;
+      border: none;
+      border-radius: 12px;
+      padding: 0 12px;
+      font-size: 13px;
+      font-weight: 500;
+      font-family: 'Inter', sans-serif;
+      cursor: pointer;
+      min-height: 36px;
+      transition: background 0.15s ease, color 0.15s ease;
+      white-space: nowrap;
+    }
+    .io-btn:hover {
+      background: #e2ddd9;
+      color: #3f3935;
+    }
+    .dark .io-btn {
+      background: #3f3935;
+      color: #b3ada8;
+    }
+    .dark .io-btn:hover {
+      background: #4c4642;
+      color: #f8f4f1;
+    }
+
+    /* Topbar divider */
+    .topbar-divider {
+      width: 1px;
+      height: 20px;
+      background: #dac6b7;
+      border-radius: 1px;
+      flex-shrink: 0;
+    }
+    .dark .topbar-divider {
+      background: #4c4642;
+    }
+
+    /* Calendar column */
+    .calendar-col-card {
+      background: linear-gradient(160deg, #eef4fe 0%, #fffbf8 60%) !important;
+    }
+    .dark .calendar-col-card {
+      background: linear-gradient(160deg, #162033 0%, #272320 60%) !important;
+    }
+    .auto-task-source {
+      font-size: 9px;
+      opacity: 0.42;
+      flex-shrink: 0;
+      pointer-events: none;
+      white-space: nowrap;
+      max-width: 56px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-style: italic;
+    }
+
+    /* ── Settings Modal ────────────────────────────────────────────────── */
+    #settings-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 10001;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      animation: backdropIn 0.18s ease;
+    }
+    #settings-modal-backdrop.hidden { display: none; }
+
+    #settings-modal-panel {
+      background: #fffbf8;
+      border-radius: 20px;
+      box-shadow: 0 24px 64px rgba(20,17,14,0.18);
+      width: 100%;
+      max-width: 400px;
+      overflow: hidden;
+      animation: modalIn 0.2s ease;
+    }
+    .dark #settings-modal-panel {
+      background: #272320;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+    }
+    .wcb-pos-pill {
+      flex: 1;
+      padding: 7px 8px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+      border: 1.5px solid #dac6b7;
+      background: transparent;
+      color: #5a544f;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+      font-family: 'Inter', sans-serif;
+    }
+    .dark .wcb-pos-pill { border-color: #4c4642; color: #b3ada8; }
+    .wcb-pos-pill:hover { border-color: #3468b0; color: #3468b0; }
+    .dark .wcb-pos-pill:hover { border-color: #6e9be4; color: #6e9be4; }
+    .wcb-pos-pill.active { background: #3468b0; border-color: #3468b0; color: #fff; }
+    .dark .wcb-pos-pill.active { background: #3468b0; border-color: #5489d6; color: #fff; }
+
+    .wcb-pill-swatch {
+      display: inline-block;
+      width: 10px;
+      height: 4px;
+      border-radius: 2px;
+      background: #8b5cf6;
+      margin-right: 4px;
+      vertical-align: middle;
+      position: relative;
+      top: -1px;
+    }
+
+    /* ── Context Menu ──────────────────────────────────────────────────── */
+    #task-context-menu {
+      position: fixed;
+      z-index: 20000;
+      background: #fffbf8;
+      border: 1px solid #dac6b7;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(20,17,14,0.14);
+      padding: 4px;
+      min-width: 168px;
+      display: none;
+      font-family: 'Inter', sans-serif;
+    }
+    .dark #task-context-menu {
+      background: #272320;
+      border-color: #4c4642;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+    .ctx-menu-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #3f3935;
+      cursor: pointer;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .ctx-menu-item:hover {
+      background: #efeae7;
+    }
+    .dark .ctx-menu-item {
+      color: #e2ddd9;
+    }
+    .dark .ctx-menu-item:hover {
+      background: #3f3935;
+    }
+    .ctx-menu-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dark .ctx-divider { background:#4c4642 !important; }
+
+    /* ── In Progress toggle button & pill-disabled state ──────────────── */
+    .inprogress-toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1.5px solid #dac6b7;
+      background: transparent;
+      color: #5a544f;
+      font-family: 'Inter', sans-serif;
+      transition: all 0.15s ease;
+      flex: 1;
+    }
+    .inprogress-toggle-btn:hover {
+      border-color: #fbbf24;
+      color: #92400e;
+      background: #fffbeb;
+    }
+    .inprogress-toggle-btn.active {
+      background: #fef3c7;
+      border-color: #fbbf24;
+      color: #92400e;
+    }
+    .dark .inprogress-toggle-btn {
+      border-color: #4c4642;
+      color: #b3ada8;
+    }
+    .dark .inprogress-toggle-btn:hover {
+      border-color: #fbbf24;
+      color: #fbbf24;
+      background: #2a200e;
+    }
+    .dark .inprogress-toggle-btn.active {
+      background: #2a200e;
+      border-color: #fbbf24;
+      color: #fcd34d;
+    }
+    .inprogress-toggle-btn.disabled-state {
+      opacity: 0.38;
+      pointer-events: none;
+    }
+    .percent-pills.disabled {
+      opacity: 0.35;
+      pointer-events: none;
+    }
+
+    /* ── Drop target highlight on track column ─────────────────────────── */
+    .task-list.drop-target-active {
+      outline: 2px solid #5489d6;
+      outline-offset: -2px;
+      border-radius: 8px;
+      background: rgba(84, 137, 214, 0.04);
+    }
+    .dark .task-list.drop-target-active {
+      outline-color: #6e9be4;
+      background: rgba(110, 155, 228, 0.06);
+    }
+
+    /* ── Stack splitter bar ─────────────────────────────────────────────── */
+    .stack-splitter {
+      height: 8px;
+      flex-shrink: 0;
+      cursor: row-resize;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 20;
+      background: transparent;
+      transition: background 0.15s;
+      user-select: none;
+    }
+    .stack-splitter::after {
+      content: '';
+      width: 36px;
+      height: 3px;
+      border-radius: 3px;
+      background: #d4c5bc;
+      transition: background 0.15s, width 0.15s;
+    }
+    .stack-splitter:hover,
+    .stack-splitter.splitter-active {
+      background: rgba(52, 104, 176, 0.10);
+    }
+    .stack-splitter:hover::after,
+    .stack-splitter.splitter-active::after {
+      background: #3468b0;
+      width: 52px;
+    }
+    .dark .stack-splitter::after { background: #4c4642; }
+    .dark .stack-splitter:hover::after,
+    .dark .stack-splitter.splitter-active::after { background: #6e9be4; }
+  </style>
+</head>
+<body data-id="0" class="body-transition bg-[#f8f4f1] dark:bg-[#1d1a17]">
+
+<app-icon data-id="1" hidden data-icon="columns-3" data-palette="Blue"></app-icon>
+
+<!-- Loading Overlay -->
+<div data-id="2" id="loading-overlay">
+  <div data-id="3" class="flex flex-col items-center gap-3">
+    <div data-id="4" class="spinner"></div>
+    <p data-id="5" style="font-size:14px;color:#98918b;font-family:'Inter',sans-serif;letter-spacing:0.01em;">Loading your tracks…</p>
+  </div>
+</div>
+
+<!-- Task Detail Modal -->
+<div data-id="6" id="task-modal-backdrop" class="hidden">
+  <div data-id="7" id="task-modal-panel">
+    <div data-id="8" class="modal-header">
+      <input data-id="9" type="text" class="modal-title-input" id="modal-task-title" placeholder="Task name…" />
+      <button data-id="10" class="modal-close-x" id="modal-close-x" title="Close">
+        <i data-id="11" data-lucide="x" style="width:16px;height:16px;pointer-events:none;"></i>
+      </button>
+    </div>
+    <div data-id="12" class="modal-body">
+      <!-- In Progress Toggle + Cancel Toggle side by side -->
+      <div data-id="13" style="margin-bottom:14px;">
+        <div data-id="14" class="modal-section-label">Status</div>
+        <div data-id="15" style="display:flex;gap:8px;margin-top:8px;">
+          <button data-id="16" class="inprogress-toggle-btn" id="modal-inprogress-toggle">
+            <span data-id="17" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#fbbf24;flex-shrink:0;"></span>
+            <span data-id="18" id="modal-inprogress-label">Mark as In Progress</span>
+          </button>
+          <button data-id="19" class="cancel-toggle-btn" id="modal-cancel-toggle">
+            <span data-id="20" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#9ca3af;flex-shrink:0;"></span>
+            <span data-id="21" id="modal-cancel-label">Cancel Task</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Progress Section -->
+      <div data-id="22" id="modal-progress-section">
+        <div data-id="23" class="modal-section-label">Progress</div>
+        <div data-id="24" class="percent-pills" id="modal-percent-pills">
+          <button data-id="25" class="percent-pill" data-pct="0">0%</button>
+          <button data-id="26" class="percent-pill" data-pct="25">25%</button>
+          <button data-id="27" class="percent-pill" data-pct="50">50%</button>
+          <button data-id="28" class="percent-pill" data-pct="75">75%</button>
+          <button data-id="29" class="percent-pill" data-pct="100">100%</button>
+        </div>
+        <div data-id="30" class="modal-progress-preview">
+          <div data-id="31" class="modal-progress-preview-fill" id="modal-progress-fill" style="width:0%;background:#f59e0b;"></div>
+        </div>
+      </div>
+      <!-- Notes Section -->
+      <div data-id="32">
+        <div data-id="33" class="modal-section-label">Notes</div>
+        <textarea data-id="34" class="modal-notes-textarea" id="modal-notes-textarea" rows="4" placeholder="Add notes for this task…"></textarea>
+      </div>
+    </div>
+    <div data-id="35" class="modal-footer">
+      <button data-id="36" class="modal-done-btn" id="modal-done-btn">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div data-id="37" id="settings-modal-backdrop" class="hidden">
+  <div data-id="38" id="settings-modal-panel">
+    <div data-id="39" class="modal-header">
+      <h2 data-id="40" class="modal-title">Settings</h2>
+      <button data-id="41" class="modal-close-x" id="settings-modal-close-x" title="Close">
+        <i data-id="42" data-lucide="x" style="width:16px;height:16px;pointer-events:none;"></i>
+      </button>
+    </div>
+    <div data-id="43" class="modal-body">
+      <div data-id="44">
+        <div data-id="45" class="modal-section-label">WCB / WTB / WEB task placement</div>
+        <p data-id="46" style="font-size:12px;color:#98918b;margin-bottom:12px;line-height:1.55;">Tasks whose title starts with <strong data-id="47">WCB</strong>, <strong data-id="48">WTB</strong>, or <strong data-id="49">WEB</strong> are highlighted with a <span data-id="50" class="wcb-pill-swatch"></span>violet bottom strip and sorted separately from other active tasks.</p>
+        <div data-id="51" style="display:flex;gap:8px;">
+          <button data-id="52" class="wcb-pos-pill" data-wcb-pos="top" id="wcb-pos-top">↑ Top of list</button>
+          <button data-id="53" class="wcb-pos-pill" data-wcb-pos="bottom" id="wcb-pos-bottom">↓ Bottom of list</button>
+        </div>
+      </div>
+    </div>
+    <div data-id="54" class="modal-footer">
+      <button data-id="55" class="modal-done-btn" id="settings-modal-done-btn">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Task Context Menu -->
+<div data-id="56" id="task-context-menu">
+  <div data-id="57" class="ctx-menu-item" id="ctx-toggle-inprogress">
+    <span data-id="58" class="ctx-menu-dot" style="background:#fbbf24;"></span>
+    <span data-id="59" id="ctx-inprogress-label">Mark as In Progress</span>
+  </div>
+  <div data-id="60" style="height:1px;background:#e5e7eb;margin:3px 8px;" class="ctx-divider"></div>
+  <div data-id="61" class="ctx-menu-item" id="ctx-toggle-cancel">
+    <span data-id="62" class="ctx-menu-dot" style="background:#9ca3af;"></span>
+    <span data-id="63" id="ctx-cancel-label">Cancel Task</span>
+  </div>
+</div>
+
+<!-- Hidden file input for import -->
+<input data-id="64" type="file" id="import-file-input" accept=".json" style="display:none;" />
+
+<!-- App Shell -->
+<div data-id="65" class="flex flex-col h-full">
+
+  <!-- Top Bar -->
+  <header data-id="66" id="topbar" class="topbar-transition flex-shrink-0 h-14 flex items-center justify-between px-5 bg-[#fffbf8] dark:bg-[#272320] border-b border-[#f6e8dd] dark:border-[#3f3935] z-10">
+
+    <!-- Left: Logo mount + Name -->
+    <div data-id="67" class="flex items-center gap-2.5 select-none">
+      <i data-id="68" data-lucide="layers" style="width:26px;height:26px;flex-shrink:0;margin-right:6px;color:#3468b0;"></i>
+      <span data-id="69" class="font-semibold text-[15px] text-foreground-850 dark:text-background-150 tracking-tight">TrackStack</span>
+    </div>
+
+    <!-- Right: Buttons -->
+    <div data-id="70" class="flex items-center gap-2">
+
+      <!-- Export Button -->
+      <button data-id="71" id="btn-export"
+        class="io-btn"
+        title="Export backup as JSON">
+        <i data-id="72" data-lucide="download" style="width:14px;height:14px;flex-shrink:0;pointer-events:none;"></i>
+        <span data-id="73" class="hidden sm:inline">Export</span>
+      </button>
+
+      <!-- Import Button -->
+      <button data-id="74" id="btn-import"
+        class="io-btn"
+        title="Import backup from JSON">
+        <i data-id="75" data-lucide="upload" style="width:14px;height:14px;flex-shrink:0;pointer-events:none;"></i>
+        <span data-id="76" class="hidden sm:inline">Import</span>
+      </button>
+
+      <!-- Divider -->
+      <div data-id="77" class="topbar-divider" aria-hidden="true"></div>
+
+      <!-- Add Track -->
+      <button data-id="78" id="btn-add-track"
+        class="flex items-center gap-1.5 bg-accent-450 hover:bg-accent-550 text-white rounded-xl px-4 py-1.5 text-sm font-medium transition-colors duration-150 cursor-pointer min-h-[36px]"
+        title="Add Track">
+        <i data-id="79" data-lucide="plus" class="w-4 h-4 flex-shrink-0"></i>
+        <span data-id="80" class="hidden md:inline">Add Track</span>
+      </button>
+
+      <!-- Reset All -->
+      <button data-id="81" id="btn-reset-all"
+        class="flex items-center gap-1.5 bg-background-200 dark:bg-[#3f3935] text-foreground-700 dark:text-background-200 hover:bg-background-250 dark:hover:bg-[#4c4642] rounded-xl px-4 py-1.5 text-sm font-medium transition-colors duration-150 cursor-pointer min-h-[36px]"
+        title="Reset All">
+        <i data-id="82" data-lucide="rotate-ccw" class="w-4 h-4 flex-shrink-0"></i>
+        <span data-id="83" class="hidden md:inline" id="reset-btn-label">Reset All</span>
+      </button>
+
+      <!-- Settings Button -->
+      <button data-id="84" id="btn-settings"
+        class="rounded-xl p-2 text-foreground-450 hover:text-foreground-700 dark:text-foreground-400 dark:hover:text-background-200 hover:bg-background-200 dark:hover:bg-[#3f3935] transition-colors duration-150 cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+        title="Settings">
+        <i data-id="85" data-lucide="settings" class="w-4 h-4"></i>
+      </button>
+
+      <!-- Dark Mode Toggle -->
+      <button data-id="86" id="btn-dark-mode"
+        class="rounded-xl p-2 text-foreground-450 hover:text-foreground-700 dark:text-foreground-400 dark:hover:text-background-200 hover:bg-background-200 dark:hover:bg-[#3f3935] transition-colors duration-150 cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+        title="Toggle dark mode">
+        <i data-id="87" id="dark-mode-icon" data-lucide="moon" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Tracks Area -->
+  <div data-id="88" id="tracks-area" class="tracks-area flex gap-4 flex-1 overflow-x-auto overflow-y-hidden px-5 py-5 pb-8 min-h-0">
+    <!-- Columns rendered here by JS -->
+  </div>
+
+</div>
+
+<!-- Footer -->
+<footer data-id="89" class="fixed bottom-1 right-4 pointer-events-none z-20">
+  <p data-id="90" class="text-xs text-foreground-300 dark:text-foreground-600 opacity-60">Made by Copilot</p>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  // ─── State ────────────────────────────────────────────────────────────────
+
+  let idCounter = 100;
+  const uid = () => `id-${++idCounter}-${Math.random().toString(36).slice(2, 7)}`;
+
+  function isWCBTask(text) {
+    return /^(WCB|WTB|WEB)/i.test(text);
+  }
+
+  // ── Time parsing ──────────────────────────────────────────────────────────
+  function parseTimeMinutes(text) {
+    const m = text.match(/^(\d{1,2}):(\d{2})\s*(am|pm)\s*:/i);
+    if (!m) return Infinity;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const mer = m[3].toLowerCase();
+    if (mer === 'am') { if (h === 12) h = 0; }
+    else { if (h !== 12) h += 12; }
+    return h * 60 + min;
+  }
+
+  // Returns [{task, sourceColId}] for all time-prefixed tasks in non-calendar columns
+  function getAutoCalendarItems() {
+    const items = [];
+    state.columns.forEach(col => {
+      if (col.isCalendar) return;
+      col.tasks.forEach(task => {
+        if (parseTimeMinutes(task.text) < Infinity) {
+          items.push({ task, sourceColId: col.id });
+        }
+      });
+    });
+    return items;
+  }
+
+  // Task drag state
+  let dragState = null;
+
+  // Column drag state
+  window._draggingColumnId = null;
+
+  // Modal state
+  let modalColId = null;
+  let modalTaskId = null;
+  let notesDebounceTimer = null;
+
+  // ── Single-click vs double-click disambiguation timer (task title) ────────
+  const titleClickTimers = {};
+  const TITLE_CLICK_DELAY = 220; // ms
+
+  const DEFAULT_DATA = [
+    {
+      id: uid(), title: 'Work',
+      tasks: [
+        { id: uid(), text: 'Review quarterly report', done: false, notes: '', percent: 0 },
+        { id: uid(), text: 'Prepare slides for Monday', done: false, notes: '', percent: 50 },
+        { id: uid(), text: 'Send meeting invites', done: true, notes: '', percent: 100 },
+      ]
+    },
+    {
+      id: uid(), title: 'Personal',
+      tasks: [
+        { id: uid(), text: 'Book dentist appointment', done: false, notes: '', percent: 0 },
+        { id: uid(), text: 'Call Mom', done: false, notes: '', percent: 25 },
+        { id: uid(), text: 'Pay electricity bill', done: true, notes: '', percent: 100 },
+      ]
+    },
+    {
+      id: uid(), title: 'Learning',
+      tasks: [
+        { id: uid(), text: 'Read chapter 4', done: false, notes: '', percent: 75 },
+        { id: uid(), text: 'Watch design systems talk', done: false, notes: '', percent: 0 },
+        { id: uid(), text: 'Practice daily', done: false, notes: '', percent: 0 },
+      ]
+    },
+  ];
+
+  let state = {
+    columns: JSON.parse(JSON.stringify(DEFAULT_DATA)),
+    darkMode: false,
+    trackCounter: 3,
+    wcbPosition: 'top',
+  };
+
+  // Ensure legacy tasks have new fields
+  function normalizeTasks(columns) {
+    columns.forEach(col => {
+      col.tasks.forEach(task => {
+        if (typeof task.notes !== 'string') task.notes = '';
+        if (typeof task.percent !== 'number') task.percent = 0;
+        if (typeof task.inProgress !== 'boolean') task.inProgress = false;
+        if (typeof task.cancelled !== 'boolean') task.cancelled = false;
+      });
+    });
+  }
+
+  function normalizeColumns(columns) {
+    columns.forEach(col => {
+      if (typeof col.isCalendar !== 'boolean') col.isCalendar = false;
+      if (typeof col.stackGroup === 'undefined') col.stackGroup = null;
+      if (!Array.isArray(col.tasks)) col.tasks = [];
+      if (typeof col.flexSize !== 'number' || col.flexSize <= 0) col.flexSize = col.isCalendar ? 0.85 : 1;
+    });
+    normalizeTasks(columns);
+  }
+
+  // ─── Persistence (localStorage) ──────────────────────────────────────────
+
+  async function saveState() {
+    try {
+      localStorage.setItem("trackstack:state", JSON.stringify({
+        columns: state.columns,
+        trackCounter: state.trackCounter
+      }));
+    } catch (e) {
+      console.warn("TrackStack: could not save state", e);
+    }
+  }
+
+  async function loadState() {
+    try {
+      const raw = localStorage.getItem("trackstack:state");
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data && Array.isArray(data.columns) && data.columns.length > 0) {
+          state.columns = data.columns;
+          normalizeColumns(state.columns);
+          if (typeof data.trackCounter === 'number') {
+            state.trackCounter = data.trackCounter;
+          } else {
+            state.trackCounter = Math.max(state.columns.length, 3);
+          }
+          return true;
+        }
+      }
+    } catch (e) {
+      // No saved state yet — that's fine
+    }
+    return false;
+  }
+
+  function migrateCalendar() {
+    if (state.columns.some(c => c.isCalendar)) return;
+    const calCol = {
+      id: uid(),
+      title: 'Calendar',
+      tasks: [],
+      isCalendar: true,
+      stackGroup: 'sg-cal',
+      flexSize: 0.85,
+    };
+    state.columns.unshift(calCol);
+    if (state.columns.length > 1 && !state.columns[1].stackGroup) {
+      state.columns[1].stackGroup = 'sg-cal';
+    }
+  }
+
+  async function saveSettings() {
+    try {
+      localStorage.setItem("trackstack:settings", JSON.stringify({
+        darkMode: state.darkMode,
+        wcbPosition: state.wcbPosition
+      }));
+    } catch (e) {
+      console.warn("TrackStack: could not save settings", e);
+    }
+  }
+
+  async function loadSettings() {
+    try {
+      const raw = localStorage.getItem("trackstack:settings");
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data) {
+          state.darkMode = !!data.darkMode;
+          if (data.wcbPosition === 'bottom') state.wcbPosition = 'bottom';
+          else state.wcbPosition = 'top';
+        }
+      }
+    } catch (e) {}
+  }
+
+  // ─── Toast notification ───────────────────────────────────────────────────
+
+  function showToast(msg, isError = false) {
+    const t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = `
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(0);
+      background: ${isError ? '#dc2626' : '#16a34a'};
+      color: white;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 500;
+      z-index: 99999;
+      pointer-events: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      opacity: 1;
+      transition: opacity 0.3s ease;
+    `;
+    document.body.appendChild(t);
+    setTimeout(() => {
+      t.style.opacity = '0';
+      setTimeout(() => t.remove(), 320);
+    }, 2200);
+  }
+
+  // ─── Export ───────────────────────────────────────────────────────────────
+
+  function doExport() {
+    try {
+      const exportData = {
+        columns: state.columns,
+        darkMode: state.darkMode,
+        trackCounter: state.trackCounter,
+        exportedAt: new Date().toISOString(),
+        appVersion: 'trackstack-1.0',
+      };
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'trackstack-backup.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      showToast('Export failed. Please try again.', true);
+      console.error('TrackStack export error:', e);
+    }
+  }
+
+  // ─── Import ───────────────────────────────────────────────────────────────
+
+  function doImport() {
+    const fileInput = document.getElementById('import-file-input');
+    fileInput.value = '';
+    fileInput.click();
+  }
+
+  function handleImportFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const parsed = JSON.parse(e.target.result);
+        if (!parsed || !Array.isArray(parsed.columns)) {
+          showToast('Invalid backup file.', true);
+          return;
+        }
+        state.columns = parsed.columns;
+        normalizeColumns(state.columns);
+        if (typeof parsed.trackCounter === 'number') {
+          state.trackCounter = parsed.trackCounter;
+        } else {
+          state.trackCounter = Math.max(state.columns.length, 3);
+        }
+        if (typeof parsed.darkMode === 'boolean') {
+          state.darkMode = parsed.darkMode;
+          applyDarkMode();
+          saveSettings();
+        }
+        closeModal();
+        render();
+        await saveState();
+        showToast('Tasks restored successfully!');
+      } catch (err) {
+        showToast('Invalid backup file.', true);
+        console.error('TrackStack import error:', err);
+      }
+    };
+    reader.onerror = () => {
+      showToast('Could not read file.', true);
+    };
+    reader.readAsText(file);
+  }
+
+  // ─── Dark Mode ────────────────────────────────────────────────────────────
+
+  function applyDarkMode() {
+    if (state.darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    const icon = document.getElementById('dark-mode-icon');
+    if (icon) {
+      icon.setAttribute('data-lucide', state.darkMode ? 'sun' : 'moon');
+      lucide.createIcons({ nodes: [icon] });
+    }
+  }
+
+  // ─── Reset state ─────────────────────────────────────────────────────────
+
+  let resetConfirmTimer = null;
+  let resetPending = false;
+
+  function startResetConfirm() {
+    const btn = document.getElementById('btn-reset-all');
+    const label = document.getElementById('reset-btn-label');
+    resetPending = true;
+    btn.classList.add('btn-confirm-active');
+    if (label) label.textContent = 'Confirm reset?';
+    btn.title = 'Click again to confirm';
+    clearTimeout(resetConfirmTimer);
+    resetConfirmTimer = setTimeout(() => cancelResetConfirm(), 3000);
+  }
+
+  function cancelResetConfirm() {
+    const btn = document.getElementById('btn-reset-all');
+    const label = document.getElementById('reset-btn-label');
+    resetPending = false;
+    btn.classList.remove('btn-confirm-active');
+    if (label) label.textContent = 'Reset All';
+    btn.title = 'Reset All';
+    clearTimeout(resetConfirmTimer);
+  }
+
+  async function doReset() {
+    cancelResetConfirm();
+    closeModal();
+    state.columns = JSON.parse(JSON.stringify(DEFAULT_DATA));
+    state.trackCounter = 3;
+    migrateCalendar();
+    render();
+    try {
+      localStorage.removeItem("trackstack:state");
+      localStorage.removeItem("trackstack:settings");
+    } catch (e) { /* silent */ }
+    saveState();
+  }
+
+  // ─── Column delete confirm ────────────────────────────────────────────────
+
+  const colDeletePending = {};
+
+  function startColDeleteConfirm(colId) {
+    const btn = document.querySelector(`[data-del-col="${colId}"]`);
+    if (!btn) return;
+    colDeletePending[colId] = true;
+    btn.classList.add('text-system-red-400');
+    const icon = btn.querySelector('i');
+    if (icon) {
+      icon.setAttribute('data-lucide', 'trash-2');
+      lucide.createIcons({ nodes: [icon] });
+    }
+    btn.title = 'Click again to delete';
+    clearTimeout(btn._delTimer);
+    btn._delTimer = setTimeout(() => cancelColDeleteConfirm(colId), 3000);
+  }
+
+  function cancelColDeleteConfirm(colId) {
+    const btn = document.querySelector(`[data-del-col="${colId}"]`);
+    if (!btn) return;
+    colDeletePending[colId] = false;
+    btn.classList.remove('text-system-red-400');
+    const icon = btn.querySelector('i');
+    if (icon) {
+      icon.setAttribute('data-lucide', 'x');
+      lucide.createIcons({ nodes: [icon] });
+    }
+    btn.title = 'Delete track';
+    clearTimeout(btn._delTimer);
+  }
+
+  async function doDeleteColumn(colId) {
+    const btn = document.querySelector(`[data-del-col="${colId}"]`);
+    if (btn) clearTimeout(btn._delTimer);
+    delete colDeletePending[colId];
+    state.columns = state.columns.filter(c => c.id !== colId);
+    cleanupStackGroups();
+    render();
+    saveState();
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  function getColumn(colId) {
+    return state.columns.find(c => c.id === colId);
+  }
+
+  function getTask(colId, taskId) {
+    const col = getColumn(colId);
+    return col ? col.tasks.find(t => t.id === taskId) : null;
+  }
+
+  function taskSortPriority(t) {
+    if (t.cancelled) return 2;
+    if (t.done || t.percent === 100) return 1;
+    return 0;
+  }
+
+  function sortedTasks(tasks) {
+    const active = tasks.filter(t => !t.done && !t.cancelled);
+    const checked = tasks.filter(t => t.done && !t.cancelled);
+    const cancelled = tasks.filter(t => t.cancelled);
+    const wcb = active.filter(t => isWCBTask(t.text));
+    const regular = active.filter(t => !isWCBTask(t.text));
+    const sortedActive = state.wcbPosition === 'bottom' ? [...regular, ...wcb] : [...wcb, ...regular];
+    return [...sortedActive, ...checked, ...cancelled];
+  }
+
+  // ─── Modal ────────────────────────────────────────────────────────────────
+
+  function openModal(colId, taskId) {
+    const task = getTask(colId, taskId);
+    if (!task) return;
+
+    modalColId = colId;
+    modalTaskId = taskId;
+
+    document.getElementById('modal-task-title').value = task.text;
+    updateModalPills(task.percent);
+    updateModalProgressBar(task.percent);
+    updateModalInProgressToggle(!!task.inProgress);
+    updateModalCancelToggle(!!task.cancelled);
+    document.getElementById('modal-notes-textarea').value = task.notes || '';
+
+    const backdrop = document.getElementById('task-modal-backdrop');
+    backdrop.classList.remove('hidden');
+
+    lucide.createIcons({ nodes: [document.getElementById('task-modal-panel')] });
+
+    setTimeout(() => {
+      document.getElementById('modal-notes-textarea').focus();
+    }, 100);
+  }
+
+  function closeModal() {
+    if (modalColId && modalTaskId) {
+      const task = getTask(modalColId, modalTaskId);
+      const titleInput = document.getElementById('modal-task-title');
+      if (task && titleInput) {
+        const newText = titleInput.value.trim();
+        if (newText) task.text = newText;
+      }
+    }
+    const backdrop = document.getElementById('task-modal-backdrop');
+    backdrop.classList.add('hidden');
+    modalColId = null;
+    modalTaskId = null;
+    clearTimeout(notesDebounceTimer);
+  }
+
+  function updateModalPills(percent) {
+    document.querySelectorAll('.percent-pill').forEach(pill => {
+      const pct = parseInt(pill.dataset.pct, 10);
+      if (pct === percent) {
+        pill.classList.add('active');
+      } else {
+        pill.classList.remove('active');
+      }
+    });
+  }
+
+  function updateModalProgressBar(percent) {
+    const fill = document.getElementById('modal-progress-fill');
+    fill.style.width = percent + '%';
+    if (percent === 0) {
+      fill.style.background = 'transparent';
+    } else if (percent === 100) {
+      fill.style.background = '#22c55e';
+    } else {
+      fill.style.background = '#f59e0b';
+    }
+  }
+
+  function updateModalCancelToggle(cancelled) {
+    const btn = document.getElementById('modal-cancel-toggle');
+    const label = document.getElementById('modal-cancel-label');
+    if (!btn) return;
+    btn.classList.toggle('active', cancelled);
+    if (label) label.textContent = cancelled ? 'Cancelled (click to restore)' : 'Cancel Task';
+  }
+
+  function updateModalInProgressToggle(inProgress) {
+    const _curTask = (typeof modalColId !== 'undefined' && typeof modalTaskId !== 'undefined')
+      ? getTask(modalColId, modalTaskId) : null;
+    const _isCancelled = _curTask ? !!_curTask.cancelled : false;
+
+    const btn = document.getElementById('modal-inprogress-toggle');
+    const label = document.getElementById('modal-inprogress-label');
+    const pillsContainer = document.getElementById('modal-percent-pills');
+    const progressSection = document.getElementById('modal-progress-section');
+    if (!btn) return;
+
+    // Disable everything if task is cancelled
+    btn.disabled = _isCancelled;
+    btn.classList.toggle('disabled-state', _isCancelled);
+    const _pills = document.getElementById('modal-percent-pills');
+    const _progSection = document.getElementById('modal-progress-section');
+    if (_pills) _pills.classList.toggle('disabled-state', _isCancelled);
+    if (_progSection) _progSection.classList.toggle('disabled-state', _isCancelled);
+
+    if (inProgress) {
+      btn.classList.add('active');
+      if (label) label.textContent = 'In Progress (click to clear)';
+      if (pillsContainer) pillsContainer.classList.add('disabled');
+      if (progressSection) progressSection.style.opacity = '0.45';
+    } else {
+      btn.classList.remove('active');
+      if (label) label.textContent = 'Mark as In Progress';
+      if (pillsContainer) pillsContainer.classList.remove('disabled');
+      if (progressSection) progressSection.style.opacity = '';
+    }
+  }
+
+  function refreshModalIfOpen() {
+    if (!modalColId || !modalTaskId) return;
+    const task = getTask(modalColId, modalTaskId);
+    if (!task) return;
+    document.getElementById('modal-task-title').value = task.text;
+    updateModalPills(task.percent);
+    updateModalProgressBar(task.percent);
+    updateModalInProgressToggle(!!task.inProgress);
+    updateModalCancelToggle(!!task.cancelled);
+  }
+
+  function initModal() {
+    document.getElementById('modal-close-x').addEventListener('click', () => {
+      closeModal();
+      render();
+    });
+
+    document.getElementById('modal-done-btn').addEventListener('click', () => {
+      closeModal();
+      render();
+    });
+
+    document.getElementById('task-modal-backdrop').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('task-modal-backdrop')) {
+        closeModal();
+        render();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (!document.getElementById('task-modal-backdrop').classList.contains('hidden')) {
+        if (e.key === 'Escape') {
+          closeModal();
+          render();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          closeModal();
+          render();
+        }
+      }
+    });
+
+    document.getElementById('modal-percent-pills').addEventListener('click', (e) => {
+      const pill = e.target.closest('.percent-pill');
+      if (!pill || !modalColId || !modalTaskId) return;
+      const pct = parseInt(pill.dataset.pct, 10);
+      const task = getTask(modalColId, modalTaskId);
+      if (!task) return;
+      task.percent = pct;
+      if (pct === 100) {
+        task.done = true;
+      } else {
+        task.done = false;
+      }
+      updateModalPills(pct);
+      updateModalProgressBar(pct);
+      saveState();
+      renderTracksOnly();
+    });
+
+    document.getElementById('modal-notes-textarea').addEventListener('input', (e) => {
+      if (!modalColId || !modalTaskId) return;
+      const task = getTask(modalColId, modalTaskId);
+      if (!task) return;
+      task.notes = e.target.value;
+      clearTimeout(notesDebounceTimer);
+      notesDebounceTimer = setTimeout(() => saveState(), 500);
+    });
+
+    document.getElementById('modal-inprogress-toggle').addEventListener('click', () => {
+      if (!modalColId || !modalTaskId) return;
+      const task = getTask(modalColId, modalTaskId);
+      if (!task) return;
+      task.inProgress = !task.inProgress;
+      if (task.inProgress) {
+        task.percent = 0;
+        task.done = false;
+        updateModalPills(0);
+        updateModalProgressBar(0);
+      }
+      updateModalInProgressToggle(task.inProgress);
+      saveState();
+      renderTracksOnly();
+    });
+
+    document.getElementById('modal-cancel-toggle').addEventListener('click', () => {
+      if (!modalColId || !modalTaskId) return;
+      const task = getTask(modalColId, modalTaskId);
+      if (!task) return;
+      task.cancelled = !task.cancelled;
+      if (task.cancelled) {
+        task.inProgress = false;
+      }
+      updateModalCancelToggle(task.cancelled);
+      updateModalInProgressToggle(task.inProgress);
+      saveState();
+      renderTracksOnly();
+    });
+  }
+
+  // ─── Settings Modal ──────────────────────────────────────────────────────
+
+  function openSettingsModal() {
+    updateWcbPills();
+    const backdrop = document.getElementById('settings-modal-backdrop');
+    backdrop.classList.remove('hidden');
+    lucide.createIcons({ nodes: [document.getElementById('settings-modal-panel')] });
+  }
+
+  function closeSettingsModal() {
+    document.getElementById('settings-modal-backdrop').classList.add('hidden');
+  }
+
+  function updateWcbPills() {
+    document.querySelectorAll('.wcb-pos-pill').forEach(pill => {
+      if (pill.dataset.wcbPos === state.wcbPosition) {
+        pill.classList.add('active');
+      } else {
+        pill.classList.remove('active');
+      }
+    });
+  }
+
+  function initSettingsModal() {
+    document.getElementById('settings-modal-close-x').addEventListener('click', closeSettingsModal);
+    document.getElementById('settings-modal-done-btn').addEventListener('click', closeSettingsModal);
+    document.getElementById('settings-modal-backdrop').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('settings-modal-backdrop')) closeSettingsModal();
+    });
+    document.querySelectorAll('.wcb-pos-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        state.wcbPosition = pill.dataset.wcbPos;
+        updateWcbPills();
+        saveSettings();
+        render();
+      });
+    });
+  }
+
+  // ─── Task Context Menu ────────────────────────────────────────────────────
+
+  let ctxMenuColId = null;
+  let ctxMenuTaskId = null;
+
+  function showContextMenu(x, y, colId, taskId) {
+    ctxMenuColId = colId;
+    ctxMenuTaskId = taskId;
+    const task = getTask(colId, taskId);
+    if (!task) return;
+    const label = document.getElementById('ctx-inprogress-label');
+    if (label) label.textContent = task.inProgress ? 'Clear In Progress' : 'Mark as In Progress';
+
+    const cancelLabel = document.getElementById('ctx-cancel-label');
+    if (cancelLabel) cancelLabel.textContent = task.cancelled ? 'Uncancel Task' : 'Cancel Task';
+    const inProgressItem = document.getElementById('ctx-toggle-inprogress');
+    if (inProgressItem) {
+      inProgressItem.style.opacity = task.cancelled ? '0.4' : '';
+      inProgressItem.style.pointerEvents = task.cancelled ? 'none' : '';
+    }
+
+    const menu = document.getElementById('task-context-menu');
+    menu.style.display = 'block';
+    const menuW = 180;
+    const menuH = 80;
+    let left = x + 2;
+    let top = y + 2;
+    if (left + menuW > window.innerWidth) left = window.innerWidth - menuW - 8;
+    if (top + menuH > window.innerHeight) top = window.innerHeight - menuH - 8;
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+  }
+
+  function hideContextMenu() {
+    const menu = document.getElementById('task-context-menu');
+    if (menu) menu.style.display = 'none';
+    ctxMenuColId = null;
+    ctxMenuTaskId = null;
+  }
+
+  function initContextMenu() {
+    document.getElementById('ctx-toggle-inprogress').addEventListener('click', () => {
+      if (!ctxMenuColId || !ctxMenuTaskId) return;
+      const task = getTask(ctxMenuColId, ctxMenuTaskId);
+      if (!task) return;
+      task.inProgress = !task.inProgress;
+      hideContextMenu();
+      render();
+      saveState();
+    });
+
+    document.getElementById('ctx-toggle-cancel').addEventListener('click', () => {
+      if (!ctxMenuColId || !ctxMenuTaskId) return;
+      const task = getTask(ctxMenuColId, ctxMenuTaskId);
+      if (!task) return;
+      task.cancelled = !task.cancelled;
+      if (task.cancelled) {
+        task.inProgress = false;
+      }
+      hideContextMenu();
+      render();
+      saveState();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#task-context-menu')) {
+        hideContextMenu();
+      }
+    });
+
+    document.addEventListener('contextmenu', (e) => {
+      if (!e.target.closest('#task-context-menu')) {
+        hideContextMenu();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') hideContextMenu();
+    });
+  }
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+
+  function getTaskTextClass(task) {
+    let classes = 'task-text text-foreground-800 dark:text-background-200';
+    if (task.done) {
+      classes += ' line-through text-foreground-350 opacity-60';
+    } else if (task.cancelled) {
+      classes += ' task-text-cancelled';
+    } else if (task.percent === 100) {
+      classes += ' line-through';
+    } else if (task.inProgress || (task.percent > 0 && task.percent < 100)) {
+      classes += ' task-text-inprogress';
+    }
+    return classes;
+  }
+
+  function renderTaskCard(task, colId) {
+    const checked = task.done;
+    const percent = task.percent || 0;
+    const hasNotes = !!(task.notes && task.notes.trim().length > 0);
+
+    // Find the task's actual index in the column's tasks array for drag data
+    const col = getColumn(colId);
+    const taskIndex = col ? col.tasks.indexOf(task) : 0;
+
+    const div = document.createElement('div');
+    div.className = `task-card group bg-[#f8f4f1] dark:bg-[#2d2a27] hover:bg-[#efeae7] dark:hover:bg-[#3a3733]`;
+    div.dataset.taskId = task.id;
+    div.dataset.colId = colId;
+    div.dataset.taskDone = task.done ? '1' : '0';
+    div.dataset.taskIndex = taskIndex;
+    div.setAttribute('draggable', 'true');
+
+    // ── Checkbox or cancelled indicator
+    if (task.cancelled) {
+      const dashEl = document.createElement('span');
+      dashEl.className = 'task-cancelled-indicator';
+      dashEl.textContent = '–';
+      dashEl.title = 'Cancelled';
+      div.appendChild(dashEl);
+    } else {
+      const cb = document.createElement('div');
+      cb.className = `checkbox-circle ${checked ? 'checked' : ''}`;
+      cb.dataset.action = 'toggle-task';
+      cb.dataset.taskId = task.id;
+      cb.dataset.colId = colId;
+      cb.title = checked ? 'Mark incomplete' : 'Mark complete';
+      if (checked) {
+        cb.innerHTML = `<i data-lucide="check" class="w-2.5 h-2.5 text-white" style="display:block"></i>`;
+      }
+      cb.addEventListener('dblclick', (e) => { e.stopPropagation(); });
+      div.appendChild(cb);
+    }
+
+    // ── Text wrapper
+    const textWrap = document.createElement('div');
+    textWrap.className = `flex-1 min-w-0 overflow-hidden flex items-center`;
+
+    const textEl = document.createElement('span');
+    textEl.className = getTaskTextClass(task);
+    textEl.textContent = task.text;
+    textEl.title = task.text;
+    textEl.dataset.action = 'edit-task-title';
+    textEl.dataset.taskId = task.id;
+    textEl.dataset.colId = colId;
+    textWrap.appendChild(textEl);
+
+    // ── Details/ellipsis icon button (opens the modal)
+    const detailsBtn = document.createElement('button');
+    detailsBtn.className = `details-icon-btn ${hasNotes ? 'has-notes' : 'no-notes'} opacity-0 group-hover:opacity-100 transition-opacity`;
+    detailsBtn.dataset.action = 'open-task-modal';
+    detailsBtn.dataset.taskId = task.id;
+    detailsBtn.dataset.colId = colId;
+    detailsBtn.title = 'Edit details';
+    detailsBtn.textContent = '⋯';
+    if (hasNotes) {
+      detailsBtn.style.opacity = '1';
+    }
+
+    detailsBtn.addEventListener('dblclick', (e) => { e.stopPropagation(); });
+
+    // ── Action buttons (delete only)
+    const actions = document.createElement('div');
+    actions.className = 'task-actions opacity-0 group-hover:opacity-100 transition-opacity';
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'task-action-btn text-foreground-350 hover:text-system-red-400 transition-colors';
+    delBtn.title = 'Delete task';
+    delBtn.dataset.action = 'delete-task';
+    delBtn.dataset.taskId = task.id;
+    delBtn.dataset.colId = colId;
+    delBtn.innerHTML = `<i data-lucide="trash-2" class="w-3.5 h-3.5 pointer-events-none"></i>`;
+
+    delBtn.addEventListener('dblclick', (e) => { e.stopPropagation(); });
+
+    actions.appendChild(delBtn);
+
+    div.appendChild(textWrap);
+    div.appendChild(detailsBtn);
+    div.appendChild(actions);
+
+    // ── Progress bar
+    const isWCB = isWCBTask(task.text);
+    const showBar = !task.done && !task.cancelled && (percent > 0 || isWCB || task.inProgress);
+    if (showBar) {
+      const progressBar = document.createElement('div');
+      progressBar.className = 'task-progress-bar';
+      const fill = document.createElement('div');
+      fill.className = 'task-progress-bar-fill';
+      if (isWCB && percent === 0 && !task.inProgress) {
+        fill.style.width = '100%';
+        fill.style.background = '#ddd6fe';
+      } else if (isWCB && percent > 0 && percent < 100) {
+        fill.style.width = percent + '%';
+        fill.style.background = '#8b5cf6';
+      } else if (task.inProgress && percent === 0) {
+        fill.style.width = '100%';
+        fill.style.background = '#fbbf24';
+      } else {
+        fill.style.width = percent + '%';
+        fill.style.background = '#f59e0b';
+      }
+      progressBar.appendChild(fill);
+      div.appendChild(progressBar);
+    }
+
+    // ── dblclick on the card row → open modal
+    div.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      if (titleClickTimers[task.id]) {
+        clearTimeout(titleClickTimers[task.id].timer);
+        delete titleClickTimers[task.id];
+      }
+      openModal(colId, task.id);
+    });
+
+    return div;
+  }
+
+  function renderColumn(col) {
+    const nonCancelledTasks = col.tasks.filter(t => !t.cancelled);
+    const activeTasks = nonCancelledTasks.filter(t => !t.done).length;
+    const allDone = nonCancelledTasks.length > 0 && nonCancelledTasks.every(t => t.done);
+    const sorted = sortedTasks(col.tasks);
+
+    const colDiv = document.createElement('div');
+    colDiv.className = `col-card col-transition flex flex-col w-[300px] shrink-0 h-full bg-[#fffbf8] dark:bg-[#272320] rounded-3xl shadow-[0_8px_24px_rgba(20,17,14,0.06)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.25)]`;
+    colDiv.dataset.colId = col.id;
+    colDiv.dataset.columnId = col.id;
+
+    // ── Header
+    const header = document.createElement('div');
+    header.className = 'px-4 pt-3 pb-1.5 flex items-center gap-2 flex-shrink-0';
+
+    // ── Column drag handle
+    const colDragHandle = document.createElement('div');
+    colDragHandle.className = 'column-drag-handle';
+    colDragHandle.dataset.action = 'column-drag-handle';
+    colDragHandle.dataset.colId = col.id;
+    colDragHandle.title = 'Drag to reorder track';
+    colDragHandle.setAttribute('draggable', 'true');
+    colDragHandle.innerHTML = `<i data-lucide="grip-vertical" class="pointer-events-none" style="width:13px;height:13px;"></i>`;
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'flex-1 min-w-0 flex items-center gap-1.5';
+
+    const titleEl = document.createElement('span');
+    titleEl.className = 'font-semibold text-foreground-850 dark:text-background-150 truncate cursor-pointer hover:text-accent-450 dark:hover:text-accent-350 transition-colors';
+    titleEl.style.fontSize = '13px';
+    titleEl.textContent = col.title;
+    titleEl.dataset.action = 'edit-col-title';
+    titleEl.dataset.colId = col.id;
+    titleEl.title = 'Click to edit title';
+
+    titleWrap.appendChild(titleEl);
+
+    // Badge
+    if (activeTasks > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'bg-accent-200 text-accent-600 dark:bg-accent-800 dark:text-accent-200 font-medium px-1.5 py-0 rounded-full flex-shrink-0';
+      badge.style.fontSize = '11px';
+      badge.style.lineHeight = '18px';
+      badge.textContent = activeTasks;
+      titleWrap.appendChild(badge);
+    }
+
+    // Delete col button
+    const delColBtn = document.createElement('button');
+    delColBtn.className = `del-col-btn text-foreground-350 hover:text-system-red-400 transition-colors p-1 rounded-lg cursor-pointer flex-shrink-0`;
+    delColBtn.dataset.action = 'delete-col';
+    delColBtn.dataset.colId = col.id;
+    delColBtn.title = 'Delete track';
+    delColBtn.setAttribute('data-del-col', col.id);
+    delColBtn.innerHTML = `<i data-lucide="x" class="w-3.5 h-3.5 pointer-events-none"></i>`;
+
+    header.appendChild(colDragHandle);
+    header.appendChild(titleWrap);
+    header.appendChild(delColBtn);
+
+    colDiv.appendChild(header);
+
+    // ── Add Task Input
+    const addArea = document.createElement('div');
+    addArea.className = 'px-3 pb-3 pt-1.5 flex-shrink-0';
+
+    const addInput = document.createElement('input');
+    addInput.type = 'text';
+    addInput.className = 'add-task-input w-full rounded-lg bg-background-200 dark:bg-[#3a3733] px-3 py-1.5 text-foreground-800 dark:text-background-150 placeholder-foreground-350 dark:placeholder-[#746d68] outline-none focus:bg-background-100 dark:focus:bg-[#444] focus:ring-1 focus:ring-accent-300 dark:focus:ring-accent-400 transition';
+    addInput.style.fontSize = '12px';
+    addInput.placeholder = 'Add a task…';
+    addInput.dataset.colId = col.id;
+    addInput.autocomplete = 'off';
+
+    addArea.appendChild(addInput);
+    colDiv.appendChild(addArea);
+
+    // ── Task List
+    const taskList = document.createElement('div');
+    taskList.className = 'task-list flex-1 overflow-y-auto px-3 py-1';
+    taskList.dataset.colId = col.id;
+
+    if (col.tasks.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'empty-state text-foreground-350 dark:text-foreground-500 italic text-center py-4';
+      empty.style.fontSize = '11px';
+      empty.textContent = 'No tasks yet. Add one above!';
+      taskList.appendChild(empty);
+    } else if (allDone) {
+      const doneMsg = document.createElement('p');
+      doneMsg.className = 'empty-state text-foreground-350 dark:text-foreground-500 italic text-center py-1';
+      doneMsg.style.fontSize = '11px';
+      doneMsg.textContent = 'All done! ✓';
+      taskList.appendChild(doneMsg);
+      sorted.forEach(task => taskList.appendChild(renderTaskCard(task, col.id)));
+    } else {
+      sorted.forEach(task => taskList.appendChild(renderTaskCard(task, col.id)));
+    }
+
+    colDiv.appendChild(taskList);
+
+    attachSmartDragHandlers(colDiv, colDragHandle, col.id);
+
+    return colDiv;
+  }
+
+  // ─── Render Calendar Column ───────────────────────────────────────────────
+
+  function renderCalendarColumn(col) {
+    const autoItems = getAutoCalendarItems().map(({ task, sourceColId }) => ({
+      task,
+      colId: sourceColId,
+      isAuto: true,
+      sourceTitle: state.columns.find(c => c.id === sourceColId)?.title || '',
+      sortKey: parseTimeMinutes(task.text),
+    }));
+    const nativeItems = col.tasks.map(task => ({
+      task,
+      colId: col.id,
+      isAuto: false,
+      sourceTitle: '',
+      sortKey: parseTimeMinutes(task.text),
+    }));
+    const allItems = [...autoItems, ...nativeItems].sort((a, b) => a.sortKey - b.sortKey);
+
+    const colDiv = document.createElement('div');
+    colDiv.className = `cal-col col-card col-transition calendar-col-card flex flex-col w-full shrink-0 h-full rounded-3xl shadow-[0_8px_24px_rgba(20,17,14,0.06)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.25)]`;
+    colDiv.dataset.colId = col.id;
+    colDiv.dataset.columnId = col.id;
+
+    // ── Header
+    const header = document.createElement('div');
+    header.className = 'px-4 pt-3 pb-1.5 flex items-center gap-2 flex-shrink-0';
+
+    const calHDragHandle = document.createElement('div');
+    calHDragHandle.className = 'column-drag-handle';
+    calHDragHandle.dataset.action = 'column-drag-handle';
+    calHDragHandle.dataset.colId = col.id;
+    calHDragHandle.title = 'Drag to reorder track';
+    calHDragHandle.setAttribute('draggable', 'true');
+    calHDragHandle.innerHTML = `<i data-lucide="grip-vertical" class="pointer-events-none" style="width:13px;height:13px;"></i>`;
+    header.appendChild(calHDragHandle);
+
+    const calIcon = document.createElement('div');
+    calIcon.className = 'text-accent-450 dark:text-accent-350 flex-shrink-0 flex items-center';
+    calIcon.innerHTML = `<i data-lucide="calendar" style="width:14px;height:14px;pointer-events:none;"></i>`;
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'flex-1 min-w-0 flex items-center gap-1.5';
+
+    const titleEl = document.createElement('span');
+    titleEl.className = 'font-semibold text-foreground-850 dark:text-background-150 truncate cursor-pointer hover:text-accent-450 dark:hover:text-accent-350 transition-colors';
+    titleEl.style.fontSize = '13px';
+    titleEl.textContent = col.title;
+    titleEl.dataset.action = 'edit-col-title';
+    titleEl.dataset.colId = col.id;
+    titleEl.title = 'Click to edit title';
+    titleWrap.appendChild(titleEl);
+
+    const activeTasks = allItems.filter(i => !i.task.done && !i.task.cancelled).length;
+    if (activeTasks > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'bg-accent-200 text-accent-600 dark:bg-accent-800 dark:text-accent-200 font-medium px-1.5 py-0 rounded-full flex-shrink-0';
+      badge.style.fontSize = '11px';
+      badge.style.lineHeight = '18px';
+      badge.textContent = activeTasks;
+      titleWrap.appendChild(badge);
+    }
+
+    header.appendChild(calIcon);
+    header.appendChild(titleWrap);
+    colDiv.appendChild(header);
+
+    // ── Add task input
+    const addArea = document.createElement('div');
+    addArea.className = 'px-3 pb-3 pt-1.5 flex-shrink-0';
+    const addInput = document.createElement('input');
+    addInput.type = 'text';
+    addInput.className = 'add-task-input w-full rounded-lg bg-background-200 dark:bg-[#3a3733] px-3 py-1.5 text-foreground-800 dark:text-background-150 placeholder-foreground-350 dark:placeholder-[#746d68] outline-none focus:bg-background-100 dark:focus:bg-[#444] focus:ring-1 focus:ring-accent-300 dark:focus:ring-accent-400 transition';
+    addInput.style.fontSize = '12px';
+    addInput.placeholder = 'Add to calendar (prefix "10:00am: " to sort)\u2026';
+    addInput.dataset.colId = col.id;
+    addInput.autocomplete = 'off';
+    addArea.appendChild(addInput);
+    colDiv.appendChild(addArea);
+
+    // ── Task list
+    const taskList = document.createElement('div');
+    taskList.className = 'task-list flex-1 overflow-y-auto px-3 py-1';
+    taskList.dataset.colId = col.id;
+
+    if (allItems.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'empty-state text-foreground-350 dark:text-foreground-500 italic text-center py-4';
+      empty.style.fontSize = '11px';
+      empty.textContent = 'No timed tasks yet. Add one above or prefix tasks with a time like "10:00am: Task name".';
+      taskList.appendChild(empty);
+    } else {
+      allItems.forEach(item => {
+        const card = renderTaskCard(item.task, item.colId);
+        // Strip draggable from auto calendar task cards (they belong to other columns)
+        if (item.isAuto) {
+          card.removeAttribute('draggable');
+          card.style.cursor = 'default';
+        }
+        taskList.appendChild(card);
+      });
+    }
+
+    colDiv.appendChild(taskList);
+
+    attachSmartDragHandlers(colDiv, calHDragHandle, col.id);
+
+    return colDiv;
+  }
+
+  // ─── Column Drag-and-Drop: Single Smart Handler ──────────────────────────
+
+  function clearAllDragClasses() {
+    document.querySelectorAll('.col-card').forEach(el => {
+      el.classList.remove(
+        'column-drag-over-left', 'column-drag-over-right',
+        'column-drag-over-top', 'column-drag-over-bottom',
+        'column-drag-combine'
+      );
+    });
+  }
+
+  function cleanupStackGroups() {
+    const counts = {};
+    state.columns.forEach(col => {
+      if (col.stackGroup) counts[col.stackGroup] = (counts[col.stackGroup] || 0) + 1;
+    });
+    state.columns.forEach(col => {
+      if (col.stackGroup && counts[col.stackGroup] < 2) col.stackGroup = null;
+    });
+  }
+
+  // ─── Stack Splitter Resize ────────────────────────────────────────────────
+
+  (function initSplitterResize() {
+    let drag = null;
+
+    // Mousedown: delegated on document so it fires even before full init
+    document.addEventListener('mousedown', function(e) {
+      const splitter = e.target.closest('.stack-splitter');
+      if (!splitter) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      var aboveId = splitter.dataset.splitterAbove;
+      var belowId = splitter.dataset.splitterBelow;
+      var aboveEl = document.querySelector('[data-splitter-col-id="' + aboveId + '"]');
+      var belowEl = document.querySelector('[data-splitter-col-id="' + belowId + '"]');
+      if (!aboveEl || !belowEl) return;
+
+      var aboveCol = state.columns.find(function(c) { return c.id === aboveId; });
+      var belowCol = state.columns.find(function(c) { return c.id === belowId; });
+      if (!aboveCol || !belowCol) return;
+
+      splitter.classList.add('splitter-active');
+
+      drag = {
+        splitter: splitter,
+        aboveEl: aboveEl, belowEl: belowEl,
+        aboveCol: aboveCol, belowCol: belowCol,
+        startY: e.clientY,
+        startAboveH: aboveEl.offsetHeight,
+        startBelowH: belowEl.offsetHeight,
+        oldAboveFlexSize: aboveCol.flexSize || 1,
+        oldBelowFlexSize: belowCol.flexSize || 1,
+      };
+    });
+
+    document.addEventListener('mousemove', function(e) {
+      if (!drag) return;
+      var startY = drag.startY;
+      var startAboveH = drag.startAboveH;
+      var startBelowH = drag.startBelowH;
+      var aboveEl = drag.aboveEl;
+      var belowEl = drag.belowEl;
+
+      var delta = e.clientY - startY;
+      var totalPx = startAboveH + startBelowH;
+      var minH = 80;
+      var newAboveH = Math.max(minH, Math.min(totalPx - minH, startAboveH + delta));
+      var newBelowH = totalPx - newAboveH;
+
+      // Drive flex-grow with pixel values directly (proportional, no unit needed)
+      aboveEl.style.flexGrow = String(newAboveH);
+      belowEl.style.flexGrow = String(newBelowH);
+    });
+
+    document.addEventListener('mouseup', function(e) {
+      if (!drag) return;
+      var splitter = drag.splitter;
+      var aboveEl = drag.aboveEl;
+      var belowEl = drag.belowEl;
+      var aboveCol = drag.aboveCol;
+      var belowCol = drag.belowCol;
+      var oldAboveFlexSize = drag.oldAboveFlexSize;
+      var oldBelowFlexSize = drag.oldBelowFlexSize;
+
+      splitter.classList.remove('splitter-active');
+
+      // Convert pixel-based flex-grow back to normalized flexSize
+      var rawAbove = parseFloat(aboveEl.style.flexGrow) || 1;
+      var rawBelow = parseFloat(belowEl.style.flexGrow) || 1;
+      var oldSum = oldAboveFlexSize + oldBelowFlexSize;
+      var newTotal = rawAbove + rawBelow;
+      aboveCol.flexSize = (rawAbove / newTotal) * oldSum;
+      belowCol.flexSize = (rawBelow / newTotal) * oldSum;
+
+      drag = null;
+      saveState();
+    });
+
+    // Cancel on escape
+    document.addEventListener('keydown', function(e) {
+      if (drag && e.key === 'Escape') {
+        drag.splitter.classList.remove('splitter-active');
+        drag.aboveEl.style.flexGrow = String(drag.oldAboveFlexSize);
+        drag.belowEl.style.flexGrow = String(drag.oldBelowFlexSize);
+        drag = null;
+      }
+    });
+  })();
+
+  function attachSmartDragHandlers(colDiv, handle, colId) {
+    handle.addEventListener('dragstart', (e) => {
+      e.stopPropagation();
+      window._draggingColumnId = colId;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', colId);
+      setTimeout(() => colDiv.classList.add('column-dragging'), 10);
+    });
+
+    handle.addEventListener('dragend', () => {
+      colDiv.classList.remove('column-dragging');
+      clearAllDragClasses();
+      window._draggingColumnId = null;
+    });
+
+    colDiv.addEventListener('dragover', (e) => {
+      // Allow task drops on any column (don't block when dragState is active)
+      if (dragState) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+
+        // Show drop-target highlight on the task-list container
+        const taskListEl = colDiv.querySelector('.task-list');
+        if (taskListEl) {
+          // Clear all other task-list highlights
+          document.querySelectorAll('.task-list.drop-target-active').forEach(el => {
+            if (el !== taskListEl) el.classList.remove('drop-target-active');
+          });
+          taskListEl.classList.add('drop-target-active');
+        }
+
+        // Show insertion indicator on individual cards
+        const card = e.target.closest('.task-card');
+        if (card && card.dataset.taskId !== dragState.taskId) {
+          clearDragClasses();
+          if (isTopHalf(e, card)) {
+            card.classList.add('drag-above');
+          } else {
+            card.classList.add('drag-below');
+          }
+        }
+        return;
+      }
+
+      if (!window._draggingColumnId) return;
+      if (colId === window._draggingColumnId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+
+      clearAllDragClasses();
+
+      const rect = colDiv.getBoundingClientRect();
+      const relX = (e.clientX - rect.left) / rect.width;
+
+      if (relX < 0.25) {
+        colDiv.classList.add('column-drag-over-left');
+      } else if (relX > 0.75) {
+        colDiv.classList.add('column-drag-over-right');
+      } else {
+        const draggedCol = state.columns.find(c => c.id === window._draggingColumnId);
+        const targetCol  = state.columns.find(c => c.id === colId);
+        const sameStack  = draggedCol && targetCol && draggedCol.stackGroup && draggedCol.stackGroup === targetCol.stackGroup;
+        if (sameStack) {
+          const midY = rect.top + rect.height / 2;
+          colDiv.classList.add(e.clientY < midY ? 'column-drag-over-top' : 'column-drag-over-bottom');
+        } else {
+          colDiv.classList.add('column-drag-combine');
+        }
+      }
+    });
+
+    colDiv.addEventListener('dragleave', (e) => {
+      if (dragState) {
+        // Remove task-list highlight when leaving column
+        if (!colDiv.contains(e.relatedTarget)) {
+          const taskListEl = colDiv.querySelector('.task-list');
+          if (taskListEl) taskListEl.classList.remove('drop-target-active');
+        }
+        const card = e.target.closest('.task-card');
+        if (card) {
+          card.classList.remove('drag-above', 'drag-below');
+        }
+        return;
+      }
+
+      if (!window._draggingColumnId) return;
+      if (!colDiv.contains(e.relatedTarget)) {
+        colDiv.classList.remove(
+          'column-drag-over-left', 'column-drag-over-right',
+          'column-drag-over-top', 'column-drag-over-bottom',
+          'column-drag-combine'
+        );
+      }
+    });
+
+    colDiv.addEventListener('drop', (e) => {
+      // Handle task drops (cross-track and same-track)
+      if (dragState) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Clean up visual indicators
+        clearDragClasses();
+        document.querySelectorAll('.task-list.drop-target-active').forEach(el => el.classList.remove('drop-target-active'));
+
+        const sourceColId = dragState.colId;
+        const draggedTaskId = dragState.taskId;
+        const destColId = colId;
+
+        const sourceCol = getColumn(sourceColId);
+        const destCol = getColumn(destColId);
+        if (!sourceCol || !destCol) return;
+
+        const draggedTask = sourceCol.tasks.find(t => t.id === draggedTaskId);
+        if (!draggedTask) return;
+
+        // Find insert position among visible task cards in this column's task list
+        const taskListEl = colDiv.querySelector('.task-list');
+        const cardEls = taskListEl ? [...taskListEl.querySelectorAll('.task-card')] : [];
+        const filteredCards = cardEls.filter(el => el.dataset.taskId !== draggedTaskId);
+
+        let destIndex = filteredCards.length; // default: append at end
+        for (let i = 0; i < filteredCards.length; i++) {
+          const rect = filteredCards[i].getBoundingClientRect();
+          if (e.clientY < rect.top + rect.height / 2) {
+            destIndex = i;
+            break;
+          }
+        }
+
+        if (sourceColId === destColId) {
+          // Same track: reorder within the sorted view, then reconstruct order
+          const sourceIndex = sourceCol.tasks.indexOf(draggedTask);
+          if (sourceIndex === -1) return;
+
+          // Get the sorted order for this column
+          const sorted = sortedTasks(sourceCol.tasks);
+          const sortedWithout = sorted.filter(t => t.id !== draggedTaskId);
+
+          // Clamp destIndex
+          destIndex = Math.min(destIndex, sortedWithout.length);
+
+          sortedWithout.splice(destIndex, 0, draggedTask);
+
+          // Replace tasks with new order (active first, then done, then cancelled)
+          const newActive = sortedWithout.filter(t => !t.done && !t.cancelled);
+          const newDone = sortedWithout.filter(t => t.done && !t.cancelled);
+          const newCancelled = sortedWithout.filter(t => t.cancelled);
+          sourceCol.tasks = [...newActive, ...newDone, ...newCancelled];
+        } else {
+          // Cross-track: remove from source, insert into dest
+          sourceCol.tasks = sourceCol.tasks.filter(t => t.id !== draggedTaskId);
+
+          // Get sorted dest tasks to figure out where to insert
+          const destSorted = sortedTasks(destCol.tasks);
+          destIndex = Math.min(destIndex, destSorted.length);
+          destSorted.splice(destIndex, 0, draggedTask);
+
+          const newActive = destSorted.filter(t => !t.done && !t.cancelled);
+          const newDone = destSorted.filter(t => t.done && !t.cancelled);
+          const newCancelled = destSorted.filter(t => t.cancelled);
+          destCol.tasks = [...newActive, ...newDone, ...newCancelled];
+        }
+
+        dragState = null;
+        render();
+        saveState();
+        return;
+      }
+
+      // Handle column drops
+      if (!window._draggingColumnId) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const draggedColId = window._draggingColumnId;
+      clearAllDragClasses();
+
+      if (draggedColId === colId) { window._draggingColumnId = null; return; }
+
+      const rect   = colDiv.getBoundingClientRect();
+      const relX   = (e.clientX - rect.left) / rect.width;
+      const draggedCol = state.columns.find(c => c.id === draggedColId);
+      const targetCol  = state.columns.find(c => c.id === colId);
+      if (!draggedCol || !targetCol) { window._draggingColumnId = null; return; }
+
+      if (relX < 0.25) {
+        draggedCol.stackGroup = null;
+        state.columns.splice(state.columns.findIndex(c => c.id === draggedColId), 1);
+        state.columns.splice(state.columns.findIndex(c => c.id === colId), 0, draggedCol);
+      } else if (relX > 0.75) {
+        draggedCol.stackGroup = null;
+        state.columns.splice(state.columns.findIndex(c => c.id === draggedColId), 1);
+        const ti = state.columns.findIndex(c => c.id === colId);
+        state.columns.splice(ti + 1, 0, draggedCol);
+      } else {
+        const sameStack = draggedCol.stackGroup && draggedCol.stackGroup === targetCol.stackGroup;
+        if (sameStack) {
+          const midY = rect.top + rect.height / 2;
+          const insertBefore = e.clientY < midY;
+          state.columns.splice(state.columns.findIndex(c => c.id === draggedColId), 1);
+          const ti = state.columns.findIndex(c => c.id === colId);
+          state.columns.splice(insertBefore ? ti : ti + 1, 0, draggedCol);
+        } else {
+          const newGroup = targetCol.stackGroup || ('sg-' + colId.slice(3, 10));
+          targetCol.stackGroup = newGroup;
+          draggedCol.stackGroup = newGroup;
+          state.columns.splice(state.columns.findIndex(c => c.id === draggedColId), 1);
+          const groupMembers = state.columns.filter(c => c.stackGroup === newGroup);
+          const lastMember = groupMembers[groupMembers.length - 1];
+          const li = state.columns.findIndex(c => c.id === lastMember.id);
+          state.columns.splice(li + 1, 0, draggedCol);
+        }
+      }
+
+      cleanupStackGroups();
+      window._draggingColumnId = null;
+      render();
+      saveState();
+    });
+  }
+
+  // ─── Group-aware render ───────────────────────────────────────────────────
+
+  function renderToArea(area) {
+    const scrollLeft = area.scrollLeft;
+    area.innerHTML = '';
+
+    const rendered = new Set();
+    const groups = [];
+    state.columns.forEach(col => {
+      if (rendered.has(col.id)) return;
+      if (col.stackGroup) {
+        const group = state.columns.filter(c => c.stackGroup === col.stackGroup);
+        group.forEach(c => rendered.add(c.id));
+        groups.push(group);
+      } else {
+        rendered.add(col.id);
+        groups.push([col]);
+      }
+    });
+
+    groups.forEach(group => {
+      if (group.length === 1) {
+        const col = group[0];
+        const el = col.isCalendar ? renderCalendarColumn(col) : renderColumn(col);
+        el.style.width = '300px';
+        area.appendChild(el);
+      } else {
+        const stack = document.createElement('div');
+        // No gap-4: splitter bars provide the visual separation
+        stack.className = 'flex flex-col shrink-0';
+        stack.style.cssText = 'width:300px;height:100%;overflow:hidden;';
+
+        group.forEach((col, i) => {
+          const el = col.isCalendar ? renderCalendarColumn(col) : renderColumn(col);
+          el.style.width = '100%';
+          el.style.flexShrink = '0';
+          // Use stored flexSize uniformly — calendar default is already baked into flexSize
+          el.style.flexGrow = String(col.flexSize || 1);
+          el.style.flexBasis = '0';
+          el.style.height = '0';
+          el.style.minHeight = '80px';
+          el.style.overflow = 'hidden';
+          // Tag for splitter targeting
+          el.dataset.splitterColId = col.id;
+          stack.appendChild(el);
+
+          // Insert a splitter bar between every adjacent pair
+          if (i < group.length - 1) {
+            const splitter = document.createElement('div');
+            splitter.className = 'stack-splitter';
+            splitter.dataset.splitterAbove = col.id;
+            splitter.dataset.splitterBelow = group[i + 1].id;
+            splitter.setAttribute('draggable', 'false');
+            stack.appendChild(splitter);
+          }
+        });
+
+        area.appendChild(stack);
+      }
+    });
+
+    area.scrollLeft = scrollLeft;
+    lucide.createIcons();
+    applyDarkMode();
+    bindColumnInputs();
+    refreshModalIfOpen();
+  }
+
+  function renderTracksOnly() {
+    renderToArea(document.getElementById('tracks-area'));
+  }
+
+  function render() {
+    renderToArea(document.getElementById('tracks-area'));
+  }
+
+  // ─── Bind per-column inputs ───────────────────────────────────────────────
+
+  function bindColumnInputs() {
+    document.querySelectorAll('.add-task-input').forEach(input => {
+      input.removeEventListener('keydown', onAddTaskKeydown);
+      input.addEventListener('keydown', onAddTaskKeydown);
+    });
+  }
+
+  async function onAddTaskKeydown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const colId = e.target.dataset.colId;
+      const text = e.target.value.trim();
+      if (!text) return;
+      const col = getColumn(colId);
+      if (!col) return;
+      const newTask = { id: uid(), text, done: false, notes: '', percent: 0, inProgress: false, cancelled: false };
+
+      const firstDoneIndex = col.tasks.findIndex(t => t.done === true);
+      if (firstDoneIndex === -1) {
+        col.tasks.push(newTask);
+      } else {
+        col.tasks.splice(firstDoneIndex, 0, newTask);
+      }
+
+      e.target.value = '';
+      render();
+      const newInput = document.querySelector(`.add-task-input[data-col-id="${colId}"]`);
+      if (newInput) newInput.focus();
+      saveState();
+    } else if (e.key === 'Escape') {
+      e.target.value = '';
+      e.target.blur();
+    }
+  }
+
+  // ─── Inline column title edit ─────────────────────────────────────────────
+
+  function startEditTitle(colId) {
+    const col = getColumn(colId);
+    if (!col) return;
+    const titleEl = document.querySelector(`[data-action="edit-col-title"][data-col-id="${colId}"]`);
+    if (!titleEl) return;
+
+    const input = document.createElement('input');
+    input.className = 'track-title-input text-foreground-850 dark:text-background-150';
+    input.value = col.title;
+    input.style.minWidth = '0';
+    titleEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    const save = async () => {
+      const newTitle = input.value.trim() || col.title;
+      col.title = newTitle;
+      render();
+      saveState();
+    };
+
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      else if (e.key === 'Escape') { input.value = col.title; input.blur(); }
+    });
+  }
+
+  // ─── Inline task title edit ───────────────────────────────────────────────
+
+  function startEditTaskTitle(colId, taskId, textEl) {
+    const task = getTask(colId, taskId);
+    if (!task) return;
+
+    if (!textEl) {
+      textEl = document.querySelector(
+        `[data-action="edit-task-title"][data-task-id="${taskId}"][data-col-id="${colId}"]`
+      );
+    }
+    if (!textEl) return;
+
+    const originalText = task.text;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'task-title-input';
+    input.value = originalText;
+    input.style.textDecoration = 'none';
+    input.style.fontStyle = 'normal';
+    input.style.opacity = '1';
+    if (document.documentElement.classList.contains('dark')) {
+      input.style.color = '#efeae7';
+    } else {
+      input.style.color = '#272320';
+    }
+
+    textEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let saved = false;
+
+    const save = () => {
+      if (saved) return;
+      saved = true;
+      const newText = input.value.trim();
+      if (newText) task.text = newText;
+      render();
+      saveState();
+    };
+
+    const cancel = () => {
+      if (saved) return;
+      saved = true;
+      render();
+    };
+
+    input.addEventListener('click', (e) => { e.stopPropagation(); });
+
+    input.addEventListener('blur', save);
+
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.blur();
+      } else if (e.key === 'Escape') {
+        task.text = originalText;
+        cancel();
+      }
+    });
+  }
+
+  // ─── Drag and Drop Helpers (Tasks) ────────────────────────────────────────
+
+  function clearDragClasses() {
+    document.querySelectorAll('.task-card').forEach(card => {
+      card.classList.remove('drag-above', 'drag-below');
+    });
+  }
+
+  function isTopHalf(e, el) {
+    const rect = el.getBoundingClientRect();
+    return e.clientY < rect.top + rect.height / 2;
+  }
+
+  // ─── Event Delegation ─────────────────────────────────────────────────────
+
+  function initEventDelegation() {
+    const tracksArea = document.getElementById('tracks-area');
+
+    // ── Task drag: dragstart on any task card (entire card is draggable)
+    tracksArea.addEventListener('dragstart', (e) => {
+      // If this is a column drag handle, let that handler handle it
+      if (window._draggingColumnId) return;
+      const colDragHandle = e.target.closest('[data-action="column-drag-handle"]');
+      if (colDragHandle) return; // column drag, not task drag
+
+      const card = e.target.closest('.task-card');
+      if (!card) return;
+
+      // Don't start drag from interactive elements
+      const interactiveTarget = e.target.closest('[data-action="toggle-task"], [data-action="delete-task"], [data-action="open-task-modal"], textarea, input, button');
+      if (interactiveTarget) {
+        e.preventDefault();
+        return;
+      }
+
+      const taskId = card.dataset.taskId;
+      const colId = card.dataset.colId;
+      const taskIndex = parseInt(card.dataset.taskIndex, 10) || 0;
+
+      dragState = { taskId, colId, taskIndex };
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', JSON.stringify({ trackId: colId, taskIndex: taskIndex }));
+
+      setTimeout(() => {
+        if (card) card.classList.add('dragging');
+      }, 10);
+    });
+
+    // ── Task drag: dragover on tracksArea for cards between columns
+    tracksArea.addEventListener('dragover', (e) => {
+      if (window._draggingColumnId) return; // column drag handled elsewhere
+      if (!dragState) return;
+
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+
+      // Individual card indicators are handled by column-level dragover
+    });
+
+    tracksArea.addEventListener('dragleave', (e) => {
+      if (window._draggingColumnId) return;
+      const card = e.target.closest('.task-card');
+      if (card) {
+        card.classList.remove('drag-above', 'drag-below');
+      }
+    });
+
+    // ── Task drag: drop (handled by column-level drop in attachSmartDragHandlers)
+    // This is a fallback for drops that land on the tracks area itself (not on a column)
+    tracksArea.addEventListener('drop', async (e) => {
+      if (window._draggingColumnId) return;
+      if (!dragState) return;
+
+      // Clean up
+      clearDragClasses();
+      document.querySelectorAll('.task-list.drop-target-active').forEach(el => el.classList.remove('drop-target-active'));
+      dragState = null;
+    });
+
+    tracksArea.addEventListener('dragend', () => {
+      document.querySelectorAll('.task-card').forEach(card => {
+        card.classList.remove('dragging', 'drag-above', 'drag-below');
+      });
+      document.querySelectorAll('.task-list.drop-target-active').forEach(el => el.classList.remove('drop-target-active'));
+      dragState = null;
+    });
+
+    tracksArea.addEventListener('dblclick', (e) => {
+      const titleEl = e.target.closest('[data-action="edit-task-title"]');
+      if (titleEl) {
+        e.stopPropagation();
+        const { taskId, colId } = titleEl.dataset;
+        if (titleClickTimers[taskId]) {
+          clearTimeout(titleClickTimers[taskId].timer);
+          delete titleClickTimers[taskId];
+        }
+        openModal(colId, taskId);
+        return;
+      }
+    });
+
+    tracksArea.addEventListener('click', async (e) => {
+      const target = e.target;
+
+      const toggleEl = target.closest('[data-action="toggle-task"]');
+      if (toggleEl) {
+        const { colId, taskId } = toggleEl.dataset;
+        const task = getTask(colId, taskId);
+        if (task) {
+          task.done = !task.done;
+          if (task.done) {
+            task.percent = 100;
+            const col = getColumn(colId);
+            if (col) {
+              col.tasks = col.tasks.filter(t => t.id !== task.id);
+              col.tasks.push(task);
+            }
+          } else {
+            task.percent = 0;
+            const col = getColumn(colId);
+            if (col) {
+              col.tasks = col.tasks.filter(t => t.id !== task.id);
+              const firstDoneIdx = col.tasks.findIndex(t => t.done);
+              if (firstDoneIdx === -1) col.tasks.push(task);
+              else col.tasks.splice(firstDoneIdx, 0, task);
+            }
+          }
+          render();
+          saveState();
+        }
+        return;
+      }
+
+      const openModalEl = target.closest('[data-action="open-task-modal"]');
+      if (openModalEl) {
+        const { colId, taskId } = openModalEl.dataset;
+        openModal(colId, taskId);
+        return;
+      }
+
+      const editTaskTitleEl = target.closest('[data-action="edit-task-title"]');
+      if (editTaskTitleEl) {
+        e.stopPropagation();
+        const { colId, taskId } = editTaskTitleEl.dataset;
+
+        if (titleClickTimers[taskId]) {
+          clearTimeout(titleClickTimers[taskId].timer);
+          delete titleClickTimers[taskId];
+        }
+
+        const capturedEl = editTaskTitleEl;
+        titleClickTimers[taskId] = {
+          timer: setTimeout(() => {
+            delete titleClickTimers[taskId];
+            startEditTaskTitle(colId, taskId, capturedEl);
+          }, TITLE_CLICK_DELAY),
+          colId,
+        };
+        return;
+      }
+
+      const delTaskEl = target.closest('[data-action="delete-task"]');
+      if (delTaskEl) {
+        const { colId, taskId } = delTaskEl.dataset;
+        const col = getColumn(colId);
+        if (!col) return;
+        const card = delTaskEl.closest('.task-card');
+        if (card) {
+          card.classList.add('removing');
+          await new Promise(r => setTimeout(r, 170));
+        }
+        col.tasks = col.tasks.filter(t => t.id !== taskId);
+        render();
+        saveState();
+        return;
+      }
+
+      const editColEl = target.closest('[data-action="edit-col-title"]');
+      if (editColEl) {
+        startEditTitle(editColEl.dataset.colId);
+        return;
+      }
+
+      const delColEl = target.closest('[data-action="delete-col"]');
+      if (delColEl) {
+        const colId = delColEl.dataset.colId;
+        if (colDeletePending[colId]) {
+          await doDeleteColumn(colId);
+        } else {
+          startColDeleteConfirm(colId);
+        }
+        return;
+      }
+    });
+
+    tracksArea.addEventListener('contextmenu', (e) => {
+      const card = e.target.closest('.task-card');
+      if (!card) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const { colId, taskId } = card.dataset;
+      showContextMenu(e.clientX, e.clientY, colId, taskId);
+    });
+  }
+
+  // ─── Top bar buttons ──────────────────────────────────────────────────────
+
+  function initTopBar() {
+    document.getElementById('btn-add-track').addEventListener('click', async () => {
+      state.trackCounter++;
+      const newCol = {
+        id: uid(),
+        title: `Track ${state.trackCounter}`,
+        tasks: [],
+        isCalendar: false,
+        stackGroup: null,
+        flexSize: 1,
+      };
+      state.columns.push(newCol);
+      render();
+      setTimeout(() => {
+        const area = document.getElementById('tracks-area');
+        area.scrollTo({ left: area.scrollWidth, behavior: 'smooth' });
+        const newInput = document.querySelector(`.add-task-input[data-col-id="${newCol.id}"]`);
+        if (newInput) newInput.focus();
+      }, 50);
+      saveState();
+    });
+
+    document.getElementById('btn-reset-all').addEventListener('click', async () => {
+      if (resetPending) {
+        await doReset();
+      } else {
+        startResetConfirm();
+      }
+    });
+
+    document.getElementById('btn-dark-mode').addEventListener('click', async () => {
+      state.darkMode = !state.darkMode;
+      applyDarkMode();
+      saveSettings();
+    });
+
+    document.getElementById('btn-settings').addEventListener('click', () => {
+      openSettingsModal();
+    });
+
+    document.getElementById('btn-export').addEventListener('click', () => {
+      doExport();
+    });
+
+    document.getElementById('btn-import').addEventListener('click', () => {
+      doImport();
+    });
+
+    document.getElementById('import-file-input').addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) {
+        handleImportFile(file);
+      }
+    });
+  }
+
+  // ─── Boot ─────────────────────────────────────────────────────────────────
+
+  (async () => {
+    const overlay = document.getElementById('loading-overlay');
+
+    await loadSettings();
+    applyDarkMode();
+
+    await loadState();
+    migrateCalendar();
+
+    if (overlay) {
+      overlay.style.display = 'none';
+    }
+
+    render();
+    lucide.createIcons();
+    initEventDelegation();
+    initTopBar();
+    initModal();
+    initSettingsModal();
+    initContextMenu();
+
+    if (window.navigator.standalone === true) {
+      const btn = document.getElementById('btn-dark-mode');
+      if (btn) btn.style.marginRight = '48px';
+    }
+  })();
+
+})();
+</script>
+</body>
+</html>
